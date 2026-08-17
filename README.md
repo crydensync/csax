@@ -1,76 +1,46 @@
-# csax - Cryden CLI Tool
+# csax
 
-<div align="center">
+Admin CLI for CrydenSync — manage users, sessions, and audit logs from the terminal. Not end-user facing; this is for developers/operators running a CrydenSync-backed app, same as `psql` is for a database, not for the app's own users.
 
-[![Status](https://img.shields.io/badge/status-planning-yellow)]()
-[![License](https://img.shields.io/badge/license-MIT-blue)]()
-[![Go Version](https://img.shields.io/badge/go-1.21+-blue)]()
+## Install
 
-</div>
-
-## 🔗 Quick Links
-- [Documentation](https://docs.crydensync.com)
-- [GitHub Organization](https://github.com/crydensync)
-- [Core Repository](https://github.com/crydensync/cryden)
-- [Report Bug](https://github.com/crydensync/cryden/issues)
-- [Discord Community](https://discord.gg/crydensync) (coming soon)
-
-## 🎯 Purpose
-Manage CrydenSync from the terminal. Create users, generate tokens, view sessions.
-
-## 📊 Status
-- **Phase**: Planning
-- **Progress**: 0%
-- **Target**: After api v1.0.0
-
-## 🗺️ Roadmap
-
-### v1.0.0
-- [ ] User management (create, list, delete)
-- [ ] Token generation and verification
-- [ ] Session listing and revocation
-- [ ] Audit log viewer
-- [ ] Config file support
-
-### v1.1.0
-- [ ] Interactive shell mode
-- [ ] TUI dashboard
-- [ ] Batch operations
-
-## 🔧 Development
 ```bash
-go build -o csax
-./csax user create --email test@example.com
-./csax token generate --user-id usr_123
+go install github.com/crydensync/csax@latest
 ```
 
-🔗 Dependencies
+## Setup
 
-· cryden core or api client
+```bash
+csax config init
+```
 
-## 🆘 Getting Help
+Prompts for your database connection string and JWT secret, writes `.env`. Same DB your CrydenSync-backed app already uses.
 
-- **Documentation**: [docs.crydensync.com](https://docs.crydensync.com)
-- **Issues**: [GitHub Issues](https://github.com/crydensync/cryden/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/crydensync/cryden/discussions)
-- **Discord**: [Join our server](https://discord.gg/crydensync) (coming soon)
+## Commands
 
-## 🤝 Contributing
+```bash
+csax migrate up|down|status                      # run/track CrydenSync + your app's own migrations
+csax users list [--limit N] [--offset N] [--json]  # every user, newest first
+csax users get <email> [--json]                      # user details, lock status, active session count
+csax users create <email> <password>                  # create a user directly
+csax users unlock <email>                              # clear a lockout early
+csax sessions list --user <email> [--json]
+csax sessions revoke <session-id> --user <email>
+csax sessions revoke-all --user <email>
+csax audit tail --user <email> [--limit N]
+csax audit search --event <type> [--limit N]              # system-wide, across all users
+csax stats                                                  # total users, active sessions, etc.
+csax health
+csax version
+```
 
-We welcome contributions! Please:
+## Design notes
 
-1. Read [CONTRIBUTING.md](CONTRIBUTING.md)
-2. Check [open issues](https://github.com/crydensync/cryden/issues)
-3. Join [Discord](https://discord.gg/crydensync)
+- Every command uses either the engine's public API/store methods, or — for a small number of read-only, system-wide commands the engine's store interfaces don't support (`users list`, `stats`, `audit search`) — direct SQL against the known Postgres schema, the same way `csax migrate` already does. No CrydenSync engine Go code was modified or added specifically to support the CLI.
+- `MIGRATIONS_DIR` (default `./migrations`) should point at a folder containing both CrydenSync's own migration files and your app's own — `csax migrate` treats them the same, just files matching `*.up.sql`/`*.down.sql`, run in filename order.
+- No CLI framework dependency (no Cobra) — deliberately dependency-light, same philosophy as the engine itself.
+- Colored output by default (auto-disabled when not writing to a real terminal). Commands returning structured data (`users get`, `users list`, `sessions list`) support `--json` for scripting.
 
-**Current needs:**
-- 🐛 Bug hunters
-- 📝 Documentation writers
-- 🧪 Testers
-- 💡 Feature ideas
+## License
 
-## 📄 License
-
-MIT © [CrydenSync](https://github.com/crydensync)
-
-**This is open source software. Use it freely, modify it, share it.**
+MIT
