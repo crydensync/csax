@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
 
 	_ "github.com/lib/pq"
 
@@ -15,6 +16,22 @@ type csaxConfig struct {
 	DatabaseURL   string
 	JWTSecret     string
 	MigrationsDir string
+
+	// OAuth — deliberately the SAME env var names api's config uses,
+	// so `csax oauth test` checks the actual values production uses,
+	// not a separate csax-only copy that could drift out of sync.
+	BaseURL            string
+	GoogleClientID     string
+	GoogleClientSecret string
+	GitHubClientID     string
+	GitHubClientSecret string
+
+	// AI — all optional. ai commands fail with a clear message if
+	// these aren't set, rather than csax refusing to start at all.
+	AIProvider    string // e.g. "openrouter"
+	AIAPIKeyEnv   string // name of the env var holding the API key — never the key itself, so it's not persisted in .env in plaintext by `config init`
+	AIModel       string
+	ReadOnlyDBURL string // separate connection string, MUST point at a read-only Postgres role — this is the real safety boundary, not just ai.validateIntent
 }
 
 func loadConfig() (csaxConfig, error) {
@@ -24,6 +41,17 @@ func loadConfig() (csaxConfig, error) {
 		DatabaseURL:   os.Getenv("DATABASE_URL"),
 		JWTSecret:     os.Getenv("JWT_SECRET"),
 		MigrationsDir: os.Getenv("MIGRATIONS_DIR"),
+
+		BaseURL:            strings.TrimRight(os.Getenv("BASE_URL"), "/"),
+		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		GitHubClientID:     os.Getenv("GITHUB_CLIENT_ID"),
+		GitHubClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
+
+		AIProvider:    os.Getenv("AI_PROVIDER"),
+		AIAPIKeyEnv:   os.Getenv("AI_API_KEY_ENV"),
+		AIModel:       os.Getenv("AI_MODEL"),
+		ReadOnlyDBURL: os.Getenv("READONLY_DATABASE_URL"),
 	}
 	if cfg.MigrationsDir == "" {
 		cfg.MigrationsDir = "./migrations"

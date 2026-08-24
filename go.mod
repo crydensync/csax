@@ -3,7 +3,7 @@ module github.com/crydensync/csax
 go 1.25.0
 
 require (
-	github.com/crydensync/cryden/v2 v2.0.0
+	github.com/crydensync/cryden/v2 v2.1.0
 	github.com/lib/pq v1.12.3
 )
 
