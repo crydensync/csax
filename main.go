@@ -24,9 +24,17 @@ Usage:
   csax sessions revoke-all --user <email>
   csax audit tail --user <email> [--limit N]
   csax audit search --event <type> [--limit N]
+  csax oauth providers list [--json]
+  csax oauth test <provider>
+  csax ai query "<natural language>" [--json]
+  csax ai logs "<natural language>"
+  csax ai audit
   csax stats
   csax health
-  csax version`)
+  csax version
+
+oauth and ai commands are optional — see README for the env vars each
+one needs. Run any command with no further args for its specific usage.`)
 }
 
 func main() {
@@ -169,6 +177,62 @@ func main() {
 			cmdAuditSearch(db, *event, *limit)
 		default:
 			fmt.Println("usage: csax audit tail|search [args]")
+			os.Exit(1)
+		}
+
+	case "oauth":
+		cfg := mustLoadConfig()
+		if len(os.Args) < 3 {
+			fmt.Println("usage: csax oauth providers list | test <provider>")
+			os.Exit(1)
+		}
+		switch os.Args[2] {
+		case "providers":
+			if len(os.Args) < 4 || os.Args[3] != "list" {
+				fmt.Println("usage: csax oauth providers list [--json]")
+				os.Exit(1)
+			}
+			fs := flag.NewFlagSet("oauth providers list", flag.ExitOnError)
+			jsonOut := fs.Bool("json", false, "output as JSON")
+			fs.Parse(os.Args[4:])
+			cmdOAuthProvidersList(cfg, *jsonOut)
+		case "test":
+			if len(os.Args) < 4 {
+				fmt.Println("usage: csax oauth test <provider>")
+				os.Exit(1)
+			}
+			cmdOAuthTest(cfg, os.Args[3])
+		default:
+			fmt.Println("usage: csax oauth providers list | test <provider>")
+			os.Exit(1)
+		}
+
+	case "ai":
+		cfg := mustLoadConfig()
+		if len(os.Args) < 3 {
+			fmt.Println(`usage: csax ai query "<natural language>" | logs "<natural language>" | audit`)
+			os.Exit(1)
+		}
+		switch os.Args[2] {
+		case "query":
+			if len(os.Args) < 4 {
+				fmt.Println(`usage: csax ai query "<natural language>" [--json]`)
+				os.Exit(1)
+			}
+			fs := flag.NewFlagSet("ai query", flag.ExitOnError)
+			jsonOut := fs.Bool("json", false, "output as JSON")
+			fs.Parse(os.Args[4:])
+			cmdAIQuery(cfg, os.Args[3], *jsonOut)
+		case "logs":
+			if len(os.Args) < 4 {
+				fmt.Println(`usage: csax ai logs "<natural language>"`)
+				os.Exit(1)
+			}
+			cmdAILogs(cfg, os.Args[3])
+		case "audit":
+			cmdAIAudit(cfg)
+		default:
+			fmt.Println(`usage: csax ai query "<natural language>" | logs "<natural language>" | audit`)
 			os.Exit(1)
 		}
 
