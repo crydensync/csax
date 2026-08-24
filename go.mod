@@ -12,3 +12,5 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
 )
+
+replace github.com/crydensync/cryden/v2 => ../cryden
