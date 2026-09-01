@@ -21,6 +21,7 @@ type csaxConfig struct {
 	// so `csax oauth test` checks the actual values production uses,
 	// not a separate csax-only copy that could drift out of sync.
 	BaseURL            string
+	FrontendURL        string
 	GoogleClientID     string
 	GoogleClientSecret string
 	GitHubClientID     string
@@ -43,6 +44,7 @@ func loadConfig() (csaxConfig, error) {
 		MigrationsDir: os.Getenv("MIGRATIONS_DIR"),
 
 		BaseURL:            strings.TrimRight(os.Getenv("BASE_URL"), "/"),
+		FrontendURL:        strings.TrimRight(os.Getenv("FRONTEND_URL"), "/"),
 		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
 		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 		GitHubClientID:     os.Getenv("GITHUB_CLIENT_ID"),
