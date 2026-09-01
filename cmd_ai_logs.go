@@ -18,14 +18,28 @@ import (
 // validated path, not two.
 type auditOnlyProvider struct {
 	inner *llmProvider
+	// originalEntity records what the model actually chose, before
+	// being overridden below — lets cmdAILogs warn the person when
+	// they've asked a question this command was never going to
+	// answer (e.g. "show me all users" silently returning audit
+	// events instead, with no indication that's not what they meant).
+	originalEntity string
 }
 
-func (p auditOnlyProvider) ParseQueryIntent(ctx context.Context, naturalLanguage string) (ai.QueryIntent, error) {
+func (p *auditOnlyProvider) ParseQueryIntent(ctx context.Context, naturalLanguage string) (ai.QueryIntent, error) {
 	intent, err := p.inner.ParseQueryIntent(ctx, naturalLanguage)
 	if err != nil {
 		return ai.QueryIntent{}, err
 	}
+	p.originalEntity = intent.Entity
 	intent.Entity = "audit_events" // this command is audit-only by definition — never trust the model's entity choice here
+	// Force real rows, never an aggregate — `ai logs` exists to show
+	// actual events for review. Left to the model, a vague prompt
+	// like "any failed logins recently" can get interpreted as
+	// Aggregate: "count", which produces a single useless number
+	// instead of the log entries the command is actually for.
+	intent.Aggregate = ""
+	intent.GroupBy = ""
 	return intent, nil
 }
 
