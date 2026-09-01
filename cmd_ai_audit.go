@@ -83,12 +83,17 @@ func cmdAIAudit(cfg csaxConfig) {
 	if err != nil || flagged == 0 {
 		return
 	}
-	narrative, err := provider.Summarize(context.Background(),
-		"You are prioritizing a fixed list of security configuration findings for a system administrator. "+
-			"You do not add new findings or invent facts not present in the list. Explain, in 2-3 sentences, "+
-			"which flagged item to fix first and why, in plain language.",
-		formatFindingsForSummary(findings))
-	if err == nil && narrative != "" {
+	var narrative string
+	summarizeErr := withSpinner("Summarizing...", func() error {
+		var serr error
+		narrative, serr = provider.Summarize(context.Background(),
+			"You are prioritizing a fixed list of security configuration findings for a system administrator. "+
+				"You do not add new findings or invent facts not present in the list. Explain, in 2-3 sentences, "+
+				"which flagged item to fix first and why, in plain language.",
+			formatFindingsForSummary(findings))
+		return serr
+	})
+	if summarizeErr == nil && narrative != "" {
 		fmt.Println("\n" + narrative)
 	}
 }
