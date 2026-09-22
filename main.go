@@ -20,6 +20,8 @@ func usage() {
 
 Usage:
   csax config init
+  csax login
+  csax logout
   csax migrate up|down|status
   csax users list [--limit N] [--offset N] [--json]
   csax users get <email> [--json]
@@ -49,8 +51,10 @@ Usage:
 
 oauth and ai commands are optional — see README for the env vars each
 one needs, or run ` + "`csax ai config`" + ` / ` + "`csax oauth config`" + ` for an
-interactive setup. Run any command with no further args for its
-specific usage.`)
+interactive setup. Setting CSAX_API_URL switches supported commands to
+call a deployed api instance over HTTP as an operator, instead of
+connecting to Postgres directly — run ` + "`csax login`" + ` first. Run any
+command with no further args for its specific usage.`)
 }
 
 func main() {
@@ -70,8 +74,23 @@ func main() {
 		}
 		cmdConfigInit(os.Args[3:])
 
+	case "login":
+		cmdLogin(mustLoadConfig())
+
+	case "logout":
+		cmdLogout()
+
 	case "migrate":
 		cfg := mustLoadConfig()
+		// migrate always stays direct-DB, even with CSAX_API_URL set —
+		// there is no sane way to run a schema migration through an
+		// HTTP admin API. Check this explicitly rather than letting an
+		// empty DATABASE_URL surface as a confusing connection error
+		// from mustConnect below.
+		if cfg.DatabaseURL == "" {
+			fmt.Fprintln(os.Stderr, "DATABASE_URL is required for `csax migrate` — it always runs directly against Postgres, regardless of CSAX_API_URL")
+			os.Exit(1)
+		}
 		db := mustConnect(cfg)
 		defer db.Close()
 		if len(os.Args) < 3 {
