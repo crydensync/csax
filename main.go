@@ -111,8 +111,6 @@ func main() {
 
 	case "users":
 		cfg := mustLoadConfig()
-		db := mustConnect(cfg)
-		defer db.Close()
 		if len(os.Args) < 3 {
 			fmt.Println("usage: csax users list|get|create|unlock [args]")
 			os.Exit(1)
@@ -124,7 +122,13 @@ func main() {
 			offset := fs.Int("offset", 0, "pagination offset")
 			jsonOut := fs.Bool("json", false, "output as JSON")
 			fs.Parse(os.Args[3:])
-			cmdUsersList(db, *limit, *offset, *jsonOut)
+			if apiMode(cfg) {
+				cmdUsersListAPI(cfg, *limit, *offset, *jsonOut)
+			} else {
+				db := mustConnect(cfg)
+				defer db.Close()
+				cmdUsersList(db, *limit, *offset, *jsonOut)
+			}
 		case "get":
 			if len(os.Args) < 4 {
 				fmt.Println("usage: csax users get <email> [--json]")
@@ -133,19 +137,33 @@ func main() {
 			fs := flag.NewFlagSet("users get", flag.ExitOnError)
 			jsonOut := fs.Bool("json", false, "output as JSON")
 			fs.Parse(os.Args[4:])
-			cmdUsersGet(db, os.Args[3], *jsonOut)
+			if apiMode(cfg) {
+				cmdUsersGetAPI(cfg, os.Args[3], *jsonOut)
+			} else {
+				db := mustConnect(cfg)
+				defer db.Close()
+				cmdUsersGet(db, os.Args[3], *jsonOut)
+			}
 		case "create":
+			// Always direct-DB — api has no admin-create-user
+			// endpoint at all, deliberately, see CLAUDE.md.
 			if len(os.Args) < 5 {
 				fmt.Println("usage: csax users create <email> <password>")
 				os.Exit(1)
 			}
+			db := mustConnect(cfg)
+			defer db.Close()
 			engine := mustBuildEngine(cfg, db)
 			cmdUsersCreate(engine, os.Args[3], os.Args[4])
 		case "unlock":
+			// Always direct-DB — api's admin console deliberately has
+			// no unlock endpoint, see CLAUDE.md.
 			if len(os.Args) < 4 {
 				fmt.Println("usage: csax users unlock <email>")
 				os.Exit(1)
 			}
+			db := mustConnect(cfg)
+			defer db.Close()
 			cmdUsersUnlock(db, os.Args[3])
 		default:
 			fmt.Println("usage: csax users list|get|create|unlock [args]")
