@@ -264,7 +264,11 @@ func main() {
 				fs := flag.NewFlagSet("oauth providers list", flag.ExitOnError)
 				jsonOut := fs.Bool("json", false, "output as JSON")
 				fs.Parse(os.Args[4:])
-				cmdOAuthProvidersList(cfg, *jsonOut)
+				if apiMode(cfg) {
+					cmdOAuthProvidersListAPI(cfg, *jsonOut)
+				} else {
+					cmdOAuthProvidersList(cfg, *jsonOut)
+				}
 			case "add":
 				if len(os.Args) < 5 {
 					fmt.Println("usage: csax oauth providers add <provider>")
@@ -280,7 +284,11 @@ func main() {
 				fmt.Println("usage: csax oauth test <provider>")
 				os.Exit(1)
 			}
-			cmdOAuthTest(cfg, os.Args[3])
+			if apiMode(cfg) {
+				cmdOAuthTestAPI(cfg, os.Args[3])
+			} else {
+				cmdOAuthTest(cfg, os.Args[3])
+			}
 		case "users":
 			if len(os.Args) < 5 || os.Args[3] != "get" {
 				fmt.Println("usage: csax oauth users get <email> [--json]")
