@@ -382,9 +382,13 @@ func main() {
 
 	case "health":
 		cfg := mustLoadConfig()
-		db := mustConnect(cfg)
-		defer db.Close()
-		cmdHealth(db)
+		if apiMode(cfg) {
+			cmdHealthAPI(cfg)
+		} else {
+			db := mustConnect(cfg)
+			defer db.Close()
+			cmdHealth(db)
+		}
 
 	case "version":
 		cmdVersion()
