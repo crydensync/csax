@@ -27,6 +27,10 @@ Usage:
   csax users get <email> [--json]
   csax users create <email> <password>
   csax users unlock <email>
+  csax digest [--since <duration>] [--json]
+  csax digest history [--limit N] [--json]   (API-client mode only)
+  csax support diagnose <email> [--json]
+  csax config-tuning [--window-days N] [--json]
   csax sessions list --user <email> [--json]
   csax sessions revoke <session-id> --user <email>
   csax sessions revoke-all --user <email>
@@ -168,6 +172,67 @@ func main() {
 		default:
 			fmt.Println("usage: csax users list|get|create|unlock [args]")
 			os.Exit(1)
+		}
+
+	case "digest":
+		cfg := mustLoadConfig()
+		if len(os.Args) >= 3 && os.Args[2] == "history" {
+			if !apiMode(cfg) {
+				fmt.Println("`csax digest history` is API-client mode only — set CSAX_API_URL. cryden's own WeeklyDigest only ever answers on demand; there is no local, direct-DB concept of scheduled digest history to read.")
+				os.Exit(1)
+			}
+			fs := flag.NewFlagSet("digest history", flag.ExitOnError)
+			limit := fs.Int("limit", 20, "how many past digests to show")
+			jsonOut := fs.Bool("json", false, "output as JSON")
+			fs.Parse(os.Args[3:])
+			cmdDigestHistoryAPI(cfg, *limit, *jsonOut)
+			break
+		}
+		fs := flag.NewFlagSet("digest", flag.ExitOnError)
+		since := fs.Duration("since", 0, "how far back to look (default: 7 days, or api's own default)")
+		jsonOut := fs.Bool("json", false, "output as JSON")
+		fs.Parse(os.Args[2:])
+		if apiMode(cfg) {
+			sinceDays := 0
+			if *since > 0 {
+				sinceDays = int(since.Hours() / 24)
+			}
+			cmdDigestAPI(cfg, sinceDays, *jsonOut)
+		} else {
+			db := mustConnect(cfg)
+			defer db.Close()
+			cmdDigest(cfg, db, *since, *jsonOut)
+		}
+
+	case "support":
+		cfg := mustLoadConfig()
+		if len(os.Args) < 4 || os.Args[2] != "diagnose" {
+			fmt.Println("usage: csax support diagnose <email> [--json]")
+			os.Exit(1)
+		}
+		fs := flag.NewFlagSet("support diagnose", flag.ExitOnError)
+		jsonOut := fs.Bool("json", false, "output as JSON")
+		fs.Parse(os.Args[4:])
+		if apiMode(cfg) {
+			cmdSupportDiagnoseAPI(cfg, os.Args[3], *jsonOut)
+		} else {
+			db := mustConnect(cfg)
+			defer db.Close()
+			cmdSupportDiagnose(cfg, db, os.Args[3], *jsonOut)
+		}
+
+	case "config-tuning":
+		cfg := mustLoadConfig()
+		fs := flag.NewFlagSet("config-tuning", flag.ExitOnError)
+		windowDays := fs.Int("window-days", 0, "reporting window in days (default: 30, cryden's own default)")
+		jsonOut := fs.Bool("json", false, "output as JSON")
+		fs.Parse(os.Args[2:])
+		if apiMode(cfg) {
+			cmdConfigTuningAPI(cfg, *windowDays, *jsonOut)
+		} else {
+			db := mustConnect(cfg)
+			defer db.Close()
+			cmdConfigTuning(cfg, db, *windowDays, *jsonOut)
 		}
 
 	case "sessions":
