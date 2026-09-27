@@ -31,6 +31,8 @@ Usage:
   csax digest history [--limit N] [--json]   (API-client mode only)
   csax support diagnose <email> [--json]
   csax config-tuning [--window-days N] [--json]
+  csax anomalies list [--status S] [--limit N] [--json]   (API-client mode only)
+  csax anomalies review <event-id> --status S [--note "..."]   (API-client mode only)
   csax sessions list --user <email> [--json]
   csax sessions revoke <session-id> --user <email>
   csax sessions revoke-all --user <email>
@@ -233,6 +235,39 @@ func main() {
 			db := mustConnect(cfg)
 			defer db.Close()
 			cmdConfigTuning(cfg, db, *windowDays, *jsonOut)
+		}
+
+	case "anomalies":
+		cfg := mustLoadConfig()
+		if len(os.Args) < 3 {
+			fmt.Println("usage: csax anomalies list|review [args]")
+			os.Exit(1)
+		}
+		switch os.Args[2] {
+		case "list":
+			fs := flag.NewFlagSet("anomalies list", flag.ExitOnError)
+			status := fs.String("status", "", "filter by status: unreviewed, confirmed, dismissed")
+			limit := fs.Int("limit", 50, "max events to show")
+			jsonOut := fs.Bool("json", false, "output as JSON")
+			fs.Parse(os.Args[3:])
+			cmdAnomaliesList(cfg, *status, *limit, *jsonOut)
+		case "review":
+			if len(os.Args) < 4 {
+				fmt.Println("usage: csax anomalies review <event-id> --status S [--note \"...\"]")
+				os.Exit(1)
+			}
+			fs := flag.NewFlagSet("anomalies review", flag.ExitOnError)
+			status := fs.String("status", "", "required: unreviewed, confirmed, or dismissed")
+			note := fs.String("note", "", "optional note, max 500 characters")
+			fs.Parse(os.Args[4:])
+			if *status == "" {
+				fmt.Println("usage: csax anomalies review <event-id> --status S [--note \"...\"]")
+				os.Exit(1)
+			}
+			cmdAnomaliesReview(cfg, os.Args[3], *status, *note)
+		default:
+			fmt.Println("usage: csax anomalies list|review [args]")
+			os.Exit(1)
 		}
 
 	case "sessions":
