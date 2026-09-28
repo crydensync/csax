@@ -7,7 +7,24 @@ Admin CLI for CrydenSync — manage users, sessions, and audit logs from the ter
 ```bash
 go install github.com/crydensync/csax@latest
 ```
+If you get `command not found` (or, on Windows, `'csax' is not recognized`) after this, `csax` installed correctly — it's just not on your `PATH` yet. Fix:
 
+**Linux / macOS / Termux:**
+```bash
+echo 'export PATH=$PATH:$(go env GOPATH)/bin' >> ~/.bashrc   # use ~/.zshrc if that's your shell
+source ~/.bashrc
+```
+
+**Windows (PowerShell):**
+```powershell
+setx PATH "$env:Path;$(go env GOPATH)\bin"
+```
+Then open a new terminal window for it to take effect.
+
+Confirm it worked:
+```bash
+csax version
+```
 ## Setup
 
 ```bash
