@@ -1,5 +1,14 @@
 # csax
 
+<div align="center">
+
+[![Go Reference](https://pkg.go.dev/badge/github.com/crydensync/cryden/v2.svg)](https://pkg.go.dev/github.com/crydensync/cryden/v2)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub Stars](https://img.shields.io/github/stars/crydensync/csax?style=social)](https://github.com/crydensync/csax/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/crydensync/csax?style=social)](https://github.com/crydensync/csax/network/members)
+
+</div>
+
 Admin CLI for CrydenSync — manage users, sessions, and audit logs from the terminal. Not end-user facing; this is for developers/operators running a CrydenSync-backed app, same as `psql` is for a database, not for the app's own users.
 
 ## Install
@@ -36,11 +45,19 @@ Prompts for your database connection string and JWT secret, writes `.env`. Same 
 ## Commands
 
 ```bash
-csax migrate up|down|status                      # run/track CrydenSync + your app's own migrations
+csax login                                                # API-client mode only — logs in to a deployed `api` instance, caches the session
+csax logout                                               # clears the cached session — local only, no network call
+csax migrate up|down|status                      # run/track CrydenSync + your app's own migrations — ALWAYS direct-DB, even in API-client mode
 csax users list [--limit N] [--offset N] [--json]  # every user, newest first
 csax users get <email> [--json]                      # user details, lock status, active session count
-csax users create <email> <password>                  # create a user directly
-csax users unlock <email>                              # clear a lockout early
+csax users create <email> <password>                  # create a user directly — direct-DB only, no `api` equivalent exists
+csax users unlock <email>                              # clear a lockout early — direct-DB only, no `api` equivalent exists
+csax digest [--since <duration>] [--json]                    # plain-English weekly activity summary
+csax digest history [--limit N] [--json]                     # API-client mode only — past scheduled digests
+csax support diagnose <email> [--json]                       # why can't this user log in, from what's already recorded
+csax config-tuning [--window-days N] [--json]                # suggested config changes — never applied automatically, see below
+csax anomalies list [--status S] [--limit N] [--json]        # API-client mode only — the flagged-event review queue
+csax anomalies review <event-id> --status S [--note "..."]   # API-client mode only — record a judgement, never an action
 csax sessions list --user <email> [--json]
 csax sessions revoke <session-id> --user <email>
 csax sessions revoke-all --user <email>
@@ -63,6 +80,50 @@ csax stats                                                  # total users, activ
 csax health
 csax version
 ```
+
+`ai query`/`logs`/`anomalies scan`/`ask`/`audit`, `users create`/`unlock`, and `sessions revoke`/`revoke-all` are always direct-DB, in both modes — see "API-client mode" below for exactly why.
+
+## Optional: API-client mode
+
+By default csax connects straight to Postgres and builds its own
+`cryden.Engine` in-process — this is "direct-DB mode," and it's
+everything described above with no special setup. If you'd rather an
+operator not need `DATABASE_URL` in their hands at all, set
+`CSAX_API_URL` to a running `api` deployment instead:
+
+```
+CSAX_API_URL=https://api.example.com
+CSAX_API_EMAIL=you@example.com        # optional — prompted if unset
+CSAX_API_PASSWORD=...                 # optional — prompted, hidden, if unset. Don't put a real password in .env.
+```
+
+Then `csax login` once. The session is cached to `~/.csax/session.json`
+(mode `0600`, never the password) and refreshed transparently after
+that — later commands don't ask for credentials again until the
+cached session is actually invalid. `csax logout` clears it; this is
+purely local, it doesn't call the deployment at all.
+
+**A real, permanent split, not a temporary gap:** `users list`/`get`,
+`oauth providers list`/`test`, `health`, `digest`, `support diagnose`,
+and `config-tuning` all work in API-client mode. `users create`/
+`unlock`, `sessions revoke`/`revoke-all`, and every `ai` command do
+not, and never will in this mode — `api`'s own admin console was built
+deliberately without account-lock/unlock power, cross-user session
+revocation, or an unscoped natural-language query surface. Those
+commands stay direct-DB-only so that capability isn't quietly routed
+around; if it's ever wanted over HTTP, that's a decision for `api`'s
+own project to make on purpose, not something this CLI should do for
+it. `digest history` and `anomalies list`/`review` are the reverse
+case: API-client mode only, because what they read
+(`reviewed_anomalies`, scheduled digest history) is `api`'s own table,
+not part of `cryden`'s schema at all.
+
+**If the deployment runs on SQLite:** every `/v1/admin/*` route on
+`api` answers `501` unconditionally — the whole admin console is
+Postgres-only there, not just parts of it. `csax login` and
+`csax health` still work fine (they're not admin routes), but every
+other API-client command will fail with a clear message rather than a
+raw HTTP status.
 
 ## Optional: OAuth admin commands
 
@@ -148,9 +209,18 @@ requirements.
 - Colored, box-drawing table output by default (`table.go`) — auto-disabled when not writing to a real terminal, or when `NO_COLOR` is set (see https://no-color.org). Long values (UUIDs, emails) are truncated with `…` rather than blowing up column widths. Audit event types get semantic color: red for anything `*_failed`/`*_reuse_detected`/`*_locked`, green for `*_success`/`*_linked`/`*_unlocked`.
 - A terminal spinner (`spinner.go`) shows during any real network/DB round trip — AI provider calls, the OAuth endpoint reachability check, and the read-only role's connection test. Skipped automatically in the same non-TTY/`NO_COLOR` cases as the table output, so scripted/piped usage never sees spinner frames mixed into captured output.
 - `csax doctor` aggregates the existing `csax health` and `csax ai audit` checks plus an OAuth config summary into one command — it calls the same underlying functions those commands use rather than re-implementing the checks a second time.
-- **Known gap, not addressed this release:** `--json` is only implemented on a handful of commands (`users get`, `users list`, `oauth providers list`, `oauth users get`, `ai query`). Retrofitting it consistently across every command (`ai logs`, `ai ask`, `ai anomalies scan`, `ai audit`, `doctor`, `stats`, `audit tail`/`search`) is real, not-yet-done work — each needs its own JSON-serializable shape, not just a flag.
+- API-client mode (`apiclient.go`) is a minimal `net/http`-based client — no request library, same dependency-light philosophy as everything else here. It's additive: every command's direct-DB path is unchanged, `CSAX_API_URL` just gives supported commands a second way to run. `DATABASE_URL` is accordingly only required in direct-DB mode now — requiring it unconditionally would have defeated the entire point of a mode that exists so an operator doesn't need a database credential at all. `csax migrate` is the one exception, checked explicitly, since there's no sane way to run a schema migration through an HTTP admin API.
+- `migrations/` now has all seven of cryden's current Postgres migrations (`0001` through `0007`), copied verbatim, plus the `0001_initial_schema.down.sql` this repo was previously missing entirely.
+- **Known gap, not addressed this release:** `--json` is implemented on `users get`/`list`, `oauth providers list`, `oauth users get`, `ai query`, `digest`, `digest history`, `support diagnose`, `config-tuning`, and `anomalies list`. Still missing on `ai logs`, `ai ask`, `ai anomalies scan`, `ai audit`, `doctor`, `stats`, `audit tail`/`search`, and `sessions list` — each needs its own JSON-serializable shape, not just a flag.
+- **Known gap, not addressed this release:** `oauthProviders()` in `cmd_oauth.go` still only lists `google`/`github` — `api` has supported `microsoft`/`discord`/`gitlab`/`apple` since its own Tier 1. `oauth providers list`/`test`/`add` in direct-DB mode won't show or configure the other four until this list is updated; API-client mode's version (reading `api`'s own oauth health endpoint) already reflects whatever `api` actually has configured, independent of this gap.
 - **Known gap, not addressed this release:** this is still one flat `package main` across ~20 files. Splitting into proper subpackages (`internal/oauth`, `internal/ai`, `internal/config`, ...) is a real structural change touching nearly every file's imports at once — deliberately NOT attempted alongside this release's feature work, since it's a much higher-risk change to make at the same time as everything else here, and much harder to review as one large diff. Worth doing as its own dedicated pass, with nothing else changing in that same commit.
 
 ## License
 
-MIT
+MIT, see [LICENSE](./LICENSE).
+
+---
+
+<div align="center">
+  <sub>Built with ❤️ in Africa · Own your users, not vendor lock-in</sub>
+</div>

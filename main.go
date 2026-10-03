@@ -1,3 +1,4 @@
+
 package main
 
 import (
@@ -10,13 +11,14 @@ import (
 )
 
 const logo = `
-   ▄████████▄ ▄▄▄
-   █ ██████▀▘ ▄▄▄▄▄  csax — CrydenSync admin CLI
-   █ ▀▀▀▀▘   ▀▀▀▀▀▘  self-hosted auth, owned by you
+▟▀▀ ▟▀▀ ▟▀▙ ▚▞
+▜▄▄ ▄▄▛ █▀█ ▞▚
+    csax · CrydenSync admin CLI
+    self-hosted auth, owned by you
 `
 
 func usage() {
-	fmt.Println(`csax — CrydenSync admin CLI
+	fmt.Println(`csax · CrydenSync admin CLI
 
 Usage:
   csax config init
@@ -55,11 +57,11 @@ Usage:
   csax health
   csax version
 
-oauth and ai commands are optional — see README for the env vars each
+oauth and ai commands are optional see README for the env vars each
 one needs, or run ` + "`csax ai config`" + ` / ` + "`csax oauth config`" + ` for an
 interactive setup. Setting CSAX_API_URL switches supported commands to
 call a deployed api instance over HTTP as an operator, instead of
-connecting to Postgres directly — run ` + "`csax login`" + ` first. Run any
+connecting to Postgres directly run ` + "`csax login`" + ` first. Run any
 command with no further args for its specific usage.`)
 }
 
