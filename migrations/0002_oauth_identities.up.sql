@@ -13,4 +13,3 @@ CREATE TABLE oauth_identities (
 );
 
 CREATE INDEX idx_oauth_identities_user_id ON oauth_identities(user_id);
-

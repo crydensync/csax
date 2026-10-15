@@ -5,8 +5,8 @@ import (
 	"fmt"
 )
 
-const csaxVersion = "v0.1.0"
-const targetCrydenVersion = "cryden/v2 v2.0.0"
+const csaxVersion = "dev" // set to the real tag (e.g. "v1.1.0") when this release is actually cut
+const targetCrydenVersion = "cryden/v2 v2.1.0"
 
 func cmdHealth(db *sql.DB) {
 	if err := db.Ping(); err != nil {

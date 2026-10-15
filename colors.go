@@ -6,9 +6,12 @@ import "os"
 // stdlib-only philosophy. Colors are skipped automatically when
 // output isn't a real terminal (e.g. piped to a file or another
 // program), so scripting against csax output never sees raw escape
-// codes mixed into the data.
+// codes mixed into the data. Also respects NO_COLOR (see
+// https://no-color.org) — any non-empty value disables color,
+// regardless of terminal detection, since that's the person's
+// explicit preference overriding csax's own guess.
 
-var colorsEnabled = isTerminal()
+var colorsEnabled = isTerminal() && os.Getenv("NO_COLOR") == ""
 
 func isTerminal() bool {
 	fi, err := os.Stdout.Stat()

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -58,17 +60,13 @@ func cmdOAuthProvidersList(cfg csaxConfig, jsonOutput bool) {
 		return
 	}
 
-	fmt.Printf("%-10s %-12s %-16s %-18s\n", "PROVIDER", "CONFIGURED", "CLIENT ID SET", "CLIENT SECRET SET")
+	columns := []string{"PROVIDER", "CONFIGURED", "CLIENT ID SET", "CLIENT SECRET SET"}
+	var rows [][]string
 	for _, p := range providers {
 		configured := p.ClientIDSet && p.ClientSecretSet
-		configuredStr := yesNo(configured)
-		if configured {
-			configuredStr = green(configuredStr)
-		} else {
-			configuredStr = dim(configuredStr)
-		}
-		fmt.Printf("%-10s %-12s %-16s %-18s\n", p.Name, configuredStr, yesNo(p.ClientIDSet), yesNo(p.ClientSecretSet))
+		rows = append(rows, []string{p.Name, yesNo(configured), yesNo(p.ClientIDSet), yesNo(p.ClientSecretSet)})
 	}
+	printTable(columns, rows)
 	if cfg.BaseURL == "" {
 		fmt.Println(yellow("\nwarning: BASE_URL is not set — provider redirect URIs cannot be computed correctly"))
 	}
@@ -113,9 +111,14 @@ func cmdOAuthTest(cfg csaxConfig, providerName string) {
 	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(p.discoveryCheckAddr)
-	if err != nil {
-		fmt.Println(red("✗") + " could not reach " + p.Name + "'s endpoint: " + err.Error())
+	var resp *http.Response
+	reachErr := withSpinner("Checking "+p.Name+"'s endpoint...", func() error {
+		var rerr error
+		resp, rerr = client.Get(p.discoveryCheckAddr)
+		return rerr
+	})
+	if reachErr != nil {
+		fmt.Println(red("✗") + " could not reach " + p.Name + "'s endpoint: " + reachErr.Error())
 		ok = false
 	} else {
 		resp.Body.Close()
@@ -133,6 +136,34 @@ func cmdOAuthTest(cfg csaxConfig, providerName string) {
 		fmt.Println(red("This provider is not ready yet — see the ✗ items above."))
 		os.Exit(1)
 	}
+}
+
+// cmdOAuthProvidersAdd configures ONE named provider — a narrower,
+// faster alternative to the full `csax oauth config` wizard for
+// someone who already has BASE_URL/FRONTEND_URL set and just wants to
+// add a provider's credentials.
+func cmdOAuthProvidersAdd(cfg csaxConfig, providerName string) {
+	if providerName != "google" && providerName != "github" {
+		fmt.Println(red("unknown provider: " + providerName + " (expected: google, github)"))
+		os.Exit(1)
+	}
+	if cfg.BaseURL == "" {
+		fmt.Println(yellow("BASE_URL is not set yet — run `csax oauth config` first, or set it by hand before adding a provider."))
+		os.Exit(1)
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("Adding %s.\n", providerName)
+	clientID := promptDefault(reader, providerName+" client ID", "")
+	clientSecret := promptDefault(reader, providerName+" client secret", "")
+
+	prefix := strings.ToUpper(providerName)
+	appendEnvValues(reader, map[string]string{
+		prefix + "_CLIENT_ID":     clientID,
+		prefix + "_CLIENT_SECRET": clientSecret,
+	})
+	printCallbackURLs(cfg.BaseURL, providerName)
+	fmt.Println("Run `csax oauth test " + providerName + "` to confirm it's reachable.")
 }
 
 func yesNo(b bool) string {

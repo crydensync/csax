@@ -22,7 +22,12 @@ func cmdAIQuery(cfg csaxConfig, naturalLanguage string, jsonOutput bool) {
 	defer readonlyDB.Close()
 
 	store := postgres.NewSafeQueryStore(readonlyDB)
-	result, err := ai.ExecuteQuery(context.Background(), store, provider, naturalLanguage)
+	var result ai.QueryResult
+	err := withSpinner("Thinking...", func() error {
+		var qerr error
+		result, qerr = ai.ExecuteQuery(context.Background(), store, provider, naturalLanguage)
+		return qerr
+	})
 	if err != nil {
 		if errors.Is(err, ai.ErrUnsafeQueryIntent) {
 			// Deliberately does NOT echo the model's raw output or
@@ -52,16 +57,7 @@ func printQueryResult(result ai.QueryResult, jsonOutput bool) {
 		fmt.Println(dim("No rows."))
 		return
 	}
-	for _, col := range result.Columns {
-		fmt.Printf("%-24s", col)
-	}
-	fmt.Println()
-	for _, row := range result.Rows {
-		for _, v := range row {
-			fmt.Printf("%-24s", v)
-		}
-		fmt.Println()
-	}
+	printTable(result.Columns, result.Rows)
 	fmt.Printf("\n%d row(s).\n", len(result.Rows))
 }
 
