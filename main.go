@@ -10,21 +10,30 @@ import (
 )
 
 const logo = `
-   ▄████████▄ ▄▄▄
-   █ ██████▀▘ ▄▄▄▄▄  csax — CrydenSync admin CLI
-   █ ▀▀▀▀▘   ▀▀▀▀▀▘  self-hosted auth, owned by you
+▟▀▀ ▟▀▀ ▟▀▙ ▚▞
+▜▄▄ ▄▄▛ █▀█ ▞▚
+    csax · CrydenSync admin CLI
+    self-hosted auth, owned by you
 `
 
 func usage() {
-	fmt.Println(`csax — CrydenSync admin CLI
+	fmt.Println(`csax · CrydenSync admin CLI
 
 Usage:
   csax config init
+  csax login
+  csax logout
   csax migrate up|down|status
   csax users list [--limit N] [--offset N] [--json]
   csax users get <email> [--json]
   csax users create <email> <password>
   csax users unlock <email>
+  csax digest [--since <duration>] [--json]
+  csax digest history [--limit N] [--json]   (API-client mode only)
+  csax support diagnose <email> [--json]
+  csax config-tuning [--window-days N] [--json]
+  csax anomalies list [--status S] [--limit N] [--json]   (API-client mode only)
+  csax anomalies review <event-id> --status S [--note "..."]   (API-client mode only)
   csax sessions list --user <email> [--json]
   csax sessions revoke <session-id> --user <email>
   csax sessions revoke-all --user <email>
@@ -47,10 +56,12 @@ Usage:
   csax health
   csax version
 
-oauth and ai commands are optional — see README for the env vars each
+oauth and ai commands are optional see README for the env vars each
 one needs, or run ` + "`csax ai config`" + ` / ` + "`csax oauth config`" + ` for an
-interactive setup. Run any command with no further args for its
-specific usage.`)
+interactive setup. Setting CSAX_API_URL switches supported commands to
+call a deployed api instance over HTTP as an operator, instead of
+connecting to Postgres directly run ` + "`csax login`" + ` first. Run any
+command with no further args for its specific usage.`)
 }
 
 func main() {
@@ -70,8 +81,23 @@ func main() {
 		}
 		cmdConfigInit(os.Args[3:])
 
+	case "login":
+		cmdLogin(mustLoadConfig())
+
+	case "logout":
+		cmdLogout()
+
 	case "migrate":
 		cfg := mustLoadConfig()
+		// migrate always stays direct-DB, even with CSAX_API_URL set —
+		// there is no sane way to run a schema migration through an
+		// HTTP admin API. Check this explicitly rather than letting an
+		// empty DATABASE_URL surface as a confusing connection error
+		// from mustConnect below.
+		if cfg.DatabaseURL == "" {
+			fmt.Fprintln(os.Stderr, "DATABASE_URL is required for `csax migrate` — it always runs directly against Postgres, regardless of CSAX_API_URL")
+			os.Exit(1)
+		}
 		db := mustConnect(cfg)
 		defer db.Close()
 		if len(os.Args) < 3 {
@@ -92,8 +118,6 @@ func main() {
 
 	case "users":
 		cfg := mustLoadConfig()
-		db := mustConnect(cfg)
-		defer db.Close()
 		if len(os.Args) < 3 {
 			fmt.Println("usage: csax users list|get|create|unlock [args]")
 			os.Exit(1)
@@ -105,7 +129,13 @@ func main() {
 			offset := fs.Int("offset", 0, "pagination offset")
 			jsonOut := fs.Bool("json", false, "output as JSON")
 			fs.Parse(os.Args[3:])
-			cmdUsersList(db, *limit, *offset, *jsonOut)
+			if apiMode(cfg) {
+				cmdUsersListAPI(cfg, *limit, *offset, *jsonOut)
+			} else {
+				db := mustConnect(cfg)
+				defer db.Close()
+				cmdUsersList(db, *limit, *offset, *jsonOut)
+			}
 		case "get":
 			if len(os.Args) < 4 {
 				fmt.Println("usage: csax users get <email> [--json]")
@@ -114,22 +144,130 @@ func main() {
 			fs := flag.NewFlagSet("users get", flag.ExitOnError)
 			jsonOut := fs.Bool("json", false, "output as JSON")
 			fs.Parse(os.Args[4:])
-			cmdUsersGet(db, os.Args[3], *jsonOut)
+			if apiMode(cfg) {
+				cmdUsersGetAPI(cfg, os.Args[3], *jsonOut)
+			} else {
+				db := mustConnect(cfg)
+				defer db.Close()
+				cmdUsersGet(db, os.Args[3], *jsonOut)
+			}
 		case "create":
+			// Always direct-DB — api has no admin-create-user
+			// endpoint at all, deliberately, see CLAUDE.md.
 			if len(os.Args) < 5 {
 				fmt.Println("usage: csax users create <email> <password>")
 				os.Exit(1)
 			}
+			db := mustConnect(cfg)
+			defer db.Close()
 			engine := mustBuildEngine(cfg, db)
 			cmdUsersCreate(engine, os.Args[3], os.Args[4])
 		case "unlock":
+			// Always direct-DB — api's admin console deliberately has
+			// no unlock endpoint, see CLAUDE.md.
 			if len(os.Args) < 4 {
 				fmt.Println("usage: csax users unlock <email>")
 				os.Exit(1)
 			}
+			db := mustConnect(cfg)
+			defer db.Close()
 			cmdUsersUnlock(db, os.Args[3])
 		default:
 			fmt.Println("usage: csax users list|get|create|unlock [args]")
+			os.Exit(1)
+		}
+
+	case "digest":
+		cfg := mustLoadConfig()
+		if len(os.Args) >= 3 && os.Args[2] == "history" {
+			if !apiMode(cfg) {
+				fmt.Println("`csax digest history` is API-client mode only — set CSAX_API_URL. cryden's own WeeklyDigest only ever answers on demand; there is no local, direct-DB concept of scheduled digest history to read.")
+				os.Exit(1)
+			}
+			fs := flag.NewFlagSet("digest history", flag.ExitOnError)
+			limit := fs.Int("limit", 20, "how many past digests to show")
+			jsonOut := fs.Bool("json", false, "output as JSON")
+			fs.Parse(os.Args[3:])
+			cmdDigestHistoryAPI(cfg, *limit, *jsonOut)
+			break
+		}
+		fs := flag.NewFlagSet("digest", flag.ExitOnError)
+		since := fs.Duration("since", 0, "how far back to look (default: 7 days, or api's own default)")
+		jsonOut := fs.Bool("json", false, "output as JSON")
+		fs.Parse(os.Args[2:])
+		if apiMode(cfg) {
+			sinceDays := 0
+			if *since > 0 {
+				sinceDays = int(since.Hours() / 24)
+			}
+			cmdDigestAPI(cfg, sinceDays, *jsonOut)
+		} else {
+			db := mustConnect(cfg)
+			defer db.Close()
+			cmdDigest(cfg, db, *since, *jsonOut)
+		}
+
+	case "support":
+		cfg := mustLoadConfig()
+		if len(os.Args) < 4 || os.Args[2] != "diagnose" {
+			fmt.Println("usage: csax support diagnose <email> [--json]")
+			os.Exit(1)
+		}
+		fs := flag.NewFlagSet("support diagnose", flag.ExitOnError)
+		jsonOut := fs.Bool("json", false, "output as JSON")
+		fs.Parse(os.Args[4:])
+		if apiMode(cfg) {
+			cmdSupportDiagnoseAPI(cfg, os.Args[3], *jsonOut)
+		} else {
+			db := mustConnect(cfg)
+			defer db.Close()
+			cmdSupportDiagnose(cfg, db, os.Args[3], *jsonOut)
+		}
+
+	case "config-tuning":
+		cfg := mustLoadConfig()
+		fs := flag.NewFlagSet("config-tuning", flag.ExitOnError)
+		windowDays := fs.Int("window-days", 0, "reporting window in days (default: 30, cryden's own default)")
+		jsonOut := fs.Bool("json", false, "output as JSON")
+		fs.Parse(os.Args[2:])
+		if apiMode(cfg) {
+			cmdConfigTuningAPI(cfg, *windowDays, *jsonOut)
+		} else {
+			db := mustConnect(cfg)
+			defer db.Close()
+			cmdConfigTuning(cfg, db, *windowDays, *jsonOut)
+		}
+
+	case "anomalies":
+		cfg := mustLoadConfig()
+		if len(os.Args) < 3 {
+			fmt.Println("usage: csax anomalies list|review [args]")
+			os.Exit(1)
+		}
+		switch os.Args[2] {
+		case "list":
+			fs := flag.NewFlagSet("anomalies list", flag.ExitOnError)
+			status := fs.String("status", "", "filter by status: unreviewed, confirmed, dismissed")
+			limit := fs.Int("limit", 50, "max events to show")
+			jsonOut := fs.Bool("json", false, "output as JSON")
+			fs.Parse(os.Args[3:])
+			cmdAnomaliesList(cfg, *status, *limit, *jsonOut)
+		case "review":
+			if len(os.Args) < 4 {
+				fmt.Println("usage: csax anomalies review <event-id> --status S [--note \"...\"]")
+				os.Exit(1)
+			}
+			fs := flag.NewFlagSet("anomalies review", flag.ExitOnError)
+			status := fs.String("status", "", "required: unreviewed, confirmed, or dismissed")
+			note := fs.String("note", "", "optional note, max 500 characters")
+			fs.Parse(os.Args[4:])
+			if *status == "" {
+				fmt.Println("usage: csax anomalies review <event-id> --status S [--note \"...\"]")
+				os.Exit(1)
+			}
+			cmdAnomaliesReview(cfg, os.Args[3], *status, *note)
+		default:
+			fmt.Println("usage: csax anomalies list|review [args]")
 			os.Exit(1)
 		}
 
@@ -227,7 +365,11 @@ func main() {
 				fs := flag.NewFlagSet("oauth providers list", flag.ExitOnError)
 				jsonOut := fs.Bool("json", false, "output as JSON")
 				fs.Parse(os.Args[4:])
-				cmdOAuthProvidersList(cfg, *jsonOut)
+				if apiMode(cfg) {
+					cmdOAuthProvidersListAPI(cfg, *jsonOut)
+				} else {
+					cmdOAuthProvidersList(cfg, *jsonOut)
+				}
 			case "add":
 				if len(os.Args) < 5 {
 					fmt.Println("usage: csax oauth providers add <provider>")
@@ -243,7 +385,11 @@ func main() {
 				fmt.Println("usage: csax oauth test <provider>")
 				os.Exit(1)
 			}
-			cmdOAuthTest(cfg, os.Args[3])
+			if apiMode(cfg) {
+				cmdOAuthTestAPI(cfg, os.Args[3])
+			} else {
+				cmdOAuthTest(cfg, os.Args[3])
+			}
 		case "users":
 			if len(os.Args) < 5 || os.Args[3] != "get" {
 				fmt.Println("usage: csax oauth users get <email> [--json]")
@@ -337,9 +483,13 @@ func main() {
 
 	case "health":
 		cfg := mustLoadConfig()
-		db := mustConnect(cfg)
-		defer db.Close()
-		cmdHealth(db)
+		if apiMode(cfg) {
+			cmdHealthAPI(cfg)
+		} else {
+			db := mustConnect(cfg)
+			defer db.Close()
+			cmdHealth(db)
+		}
 
 	case "version":
 		cmdVersion()

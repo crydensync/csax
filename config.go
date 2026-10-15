@@ -33,6 +33,14 @@ type csaxConfig struct {
 	AIAPIKeyEnv   string // name of the env var holding the API key — never the key itself, so it's not persisted in .env in plaintext by `config init`
 	AIModel       string
 	ReadOnlyDBURL string // separate connection string, MUST point at a read-only Postgres role — this is the real safety boundary, not just ai.validateIntent
+
+	// API-client mode — reach a deployed api instance over HTTP,
+	// authenticated as an operator, instead of connecting to Postgres
+	// directly. See apiclient.go. Unset (the default) leaves every
+	// command working exactly as it does today.
+	APIURL      string
+	APIEmail    string
+	APIPassword string // optional; prompted interactively if unset — never require it in .env in plaintext
 }
 
 func loadConfig() (csaxConfig, error) {
@@ -54,12 +62,23 @@ func loadConfig() (csaxConfig, error) {
 		AIAPIKeyEnv:   os.Getenv("AI_API_KEY_ENV"),
 		AIModel:       os.Getenv("AI_MODEL"),
 		ReadOnlyDBURL: os.Getenv("READONLY_DATABASE_URL"),
+
+		APIURL:      strings.TrimRight(os.Getenv("CSAX_API_URL"), "/"),
+		APIEmail:    os.Getenv("CSAX_API_EMAIL"),
+		APIPassword: os.Getenv("CSAX_API_PASSWORD"),
 	}
 	if cfg.MigrationsDir == "" {
 		cfg.MigrationsDir = "./migrations"
 	}
-	if cfg.DatabaseURL == "" {
-		return cfg, fmt.Errorf("DATABASE_URL is required — set it in .env or run `csax config init`")
+	// DATABASE_URL is only required for direct-DB mode. With
+	// CSAX_API_URL set, a command reaches the deployment over HTTP as
+	// an operator and never needs a database credential at all — that
+	// is the entire point of API-client mode, so this check must not
+	// apply when it's in use. connectDB/buildEngine still enforce
+	// DATABASE_URL for the direct-DB commands that always need it
+	// (csax migrate, and any command run without CSAX_API_URL set).
+	if cfg.DatabaseURL == "" && cfg.APIURL == "" {
+		return cfg, fmt.Errorf("DATABASE_URL is required for direct-DB mode — set it in .env, or set CSAX_API_URL to use API-client mode instead")
 	}
 	return cfg, nil
 }
